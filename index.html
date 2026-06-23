@@ -474,6 +474,11 @@ input,select,textarea{font-family:inherit}
     <!-- ============ EXPORTACOES ============ -->
     <section class="view" id="view-exportacoes">
       <div class="topbar"><div><h2>📤 Exportações</h2><p>Leve os resultados para a liderança.</p></div></div>
+      <div class="card form-section" style="margin-bottom:18px">
+        <h3>🎯 Registro para exportar</h3>
+        <p class="hint">Escolha qual turno será usado no Card, PNG, PDF e Resumo. O Excel exporta a base completa.</p>
+        <div class="field"><label>Registro</label><select id="exportPick" onchange="exportTarget=this.value"></select></div>
+      </div>
       <div class="kpi-grid">
         <div class="kpi card glow" style="cursor:pointer" onclick="openCard()"><div class="k-ic">📸</div><div class="k-lab" style="margin-top:8px">Card Executivo</div><div class="k-sub" style="margin-top:6px">PNG 1920×1080 pronto para WhatsApp</div></div>
         <div class="kpi card" style="cursor:pointer" onclick="exportPNG()"><div class="k-ic">🖼️</div><div class="k-lab" style="margin-top:8px">Exportar PNG</div><div class="k-sub" style="margin-top:6px">Card da operação atual</div></div>
@@ -526,7 +531,7 @@ input,select,textarea{font-family:inherit}
    Assim, qualquer celular/tablet/PC que abrir o ARES já conecta sozinho.
    Ex.: const DEFAULT_BACKEND_URL = 'https://script.google.com/macros/s/AKxxxx/exec';
    ============================================================ */
-const DEFAULT_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbx-oGsw0LnklNqfpo6dgxBX87XRaDGDCB-L99GRdGqPWR-v930Ud3g2vSM_sK7cxTwjkw/exec';
+const DEFAULT_BACKEND_URL = '';
 
 /* ===================== STORAGE (safe shim) ===================== */
 const Store = (()=>{
@@ -641,6 +646,18 @@ function statusLabel(achPct){
   if(achPct>=95) return '🟡 Atenção';
   return '🔴 Crítico';
 }
+/* Labor: dois gaps -> Plan→Start e Oficial→Real (absoluto + % da referência) */
+function laborMetrics(d){
+  d=d||{};
+  const lu=achievement(d.laborReal,d.laborOfficial);   // Utilização (Real/Oficial)
+  const le=achievement(d.laborReal,d.laborPlan);        // Eficiência (Real/Plan)
+  const g1=(d.laborStart!=null&&d.laborPlan!=null)?d.laborStart-d.laborPlan:null;   // Plan→Start
+  const g1p=variation(d.laborStart,d.laborPlan);
+  const g2=(d.laborReal!=null&&d.laborOfficial!=null)?d.laborReal-d.laborOfficial:null; // Oficial→Real
+  const g2p=variation(d.laborReal,d.laborOfficial);
+  return {lu,le,g1,g1p,g2,g2p};
+}
+function gapText(g,gp){ if(g==null) return '—'; return (g>=0?'+':'')+g+(gp!=null?` (${gp>=0?'+':''}${gp.toFixed(1)}%)`:''); }
 
 /* ===================== SCORE ARES ===================== */
 function scoreOf(r){
@@ -724,6 +741,18 @@ function currentRecord(){
   const pool=f.length?f:records;
   return [...pool].sort((a,b)=> (b.data||'').localeCompare(a.data||'') || (b._ts-a._ts))[0]||null;
 }
+/* Alvo de exportação escolhido pelo usuário (Exportações / Histórico) */
+let exportTarget=null;
+function exportRecord(){ return (exportTarget && records.find(r=>r.id===exportTarget)) || currentRecord(); }
+function rebuildExportPicker(){
+  const sel=document.getElementById('exportPick'); if(!sel) return;
+  const list=[...records].sort((a,b)=>(b.data||'').localeCompare(a.data||'')||b._ts-a._ts);
+  if(!list.length){ sel.innerHTML='<option value="">— sem registros —</option>'; exportTarget=null; return; }
+  if(!exportTarget || !list.find(r=>r.id===exportTarget)) exportTarget=list[0].id;
+  sel.innerHTML=list.map(r=>`<option value="${r.id}">${r.data||'—'} · ${r.turno||'—'} · ${r.coord||'—'} · ${r.site||'—'} · Score ${r.score??'—'}</option>`).join('');
+  sel.value=exportTarget;
+}
+function exportFrom(id){ exportTarget=id; rebuildExportPicker(); openCard(); }
 
 /* ===================== DASHBOARD ===================== */
 function kpiCard(ic,label,val,sub,badge,badgeClass,valClass){
@@ -795,13 +824,14 @@ function flowTable(title,d,f){
     return `<tr><td>${lab}</td><td>${me==null?'—':fmt(me,me%1?1:0)}</td><td>${re==null?'—':fmt(re,re%1?1:0)}</td>
       <td><span class="k-badge ${cls}">${varTxt}</span></td></tr>`;
   }).join('');
-  const lu=achievement(d.laborReal,d.laborOfficial), le=achievement(d.laborReal,d.laborPlan), gap=(d.laborReal!=null&&d.laborPlan!=null)?d.laborReal-d.laborPlan:null;
+  const L=laborMetrics(d);
   return `<div class="chart-card card"><h3>${title}</h3>
     <table class="tbl"><thead><tr><th>KPI</th><th>Meta</th><th>Real</th><th>Variação</th></tr></thead><tbody>${body}</tbody></table>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-      <span class="chip">Utilização ${lu!=null?lu.toFixed(0)+'%':'—'}</span>
-      <span class="chip">Eficiência ${le!=null?le.toFixed(0)+'%':'—'}</span>
-      <span class="chip ${gap!=null&&gap<0?'b-red':'b-green'}" style="border:none">Gap HC ${gap!=null?(gap>=0?'+':'')+gap:'—'}</span>
+      <span class="chip">Utilização ${L.lu!=null?L.lu.toFixed(0)+'%':'—'}</span>
+      <span class="chip">Eficiência ${L.le!=null?L.le.toFixed(0)+'%':'—'}</span>
+      <span class="chip ${L.g1!=null&&L.g1<0?'b-red':'b-green'}" style="border:none">Gap Plan→Start ${gapText(L.g1,L.g1p)}</span>
+      <span class="chip ${L.g2!=null&&L.g2<0?'b-red':'b-green'}" style="border:none">Gap Oficial→Real ${gapText(L.g2,L.g2p)}</span>
     </div></div>`;
 }
 
@@ -835,9 +865,9 @@ function liveCalc(){
     setL(`#live-${p}-abs`, av==null?'':`<span class="${av>0?'txt-red':'txt-green'}">${av>0?'+':''}${av.toFixed(1)}% ${av>0?'acima da meta 🔴':'dentro da meta 🟢'}</span>`);
     const iv=variation(d.idleReal,d.idleMeta);
     setL(`#live-${p}-idle`, iv==null?'':`<span class="${iv<0?'txt-red':'txt-green'}">${iv>=0?'+':''}${iv.toFixed(2)}% ${iv<0?'🔴':'🟢'}</span>`);
-    const lu=achievement(d.laborReal,d.laborOfficial), le=achievement(d.laborReal,d.laborPlan), gap=(d.laborReal!=null&&d.laborPlan!=null)?d.laborReal-d.laborPlan:null;
-    setL(`#live-${p}-labor`, (lu==null&&le==null&&gap==null)?'':
-      `<span style="color:var(--txt-dim)">Utilização <b class="txt-orange">${lu!=null?lu.toFixed(0)+'%':'—'}</b> · Eficiência <b class="txt-orange">${le!=null?le.toFixed(0)+'%':'—'}</b> · Gap HC <b class="${gap!=null&&gap<0?'txt-red':'txt-green'}">${gap!=null?(gap>=0?'+':'')+gap:'—'}</b></span>`);
+    const L=laborMetrics(d);
+    setL(`#live-${p}-labor`, (L.lu==null&&L.le==null&&L.g1==null&&L.g2==null)?'':
+      `<span style="color:var(--txt-dim)">Utilização <b class="txt-orange">${L.lu!=null?L.lu.toFixed(0)+'%':'—'}</b> · Eficiência <b class="txt-orange">${L.le!=null?L.le.toFixed(0)+'%':'—'}</b> · Gap Plan→Start <b class="${L.g1!=null&&L.g1<0?'txt-red':'txt-green'}">${gapText(L.g1,L.g1p)}</b> · Gap Oficial→Real <b class="${L.g2!=null&&L.g2<0?'txt-red':'txt-green'}">${gapText(L.g2,L.g2p)}</b></span>`);
   });
   const sc=scoreOf(r); const t=tier(sc);
   $('#form-score').innerHTML = sc==null?'—':`${sc} <span style="font-size:18px;color:${t.c}">${t.e} ${t.n}</span>`;
@@ -867,6 +897,7 @@ function renderHistory(){
       <td>${r.data||'—'}</td><td>${r.turno||'—'}</td><td>${r.coord||'—'}</td><td>${r.site||'—'}</td>
       <td><span class="dot" style="background:${t.c}"></span><b>${r.score??'—'}</b> <span style="color:var(--txt-dim);font-size:12px">${t.n}</span></td>
       <td><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="loadInto('${r.id}')">Ver</button>
+          <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="exportFrom('${r.id}')" title="Exportar card deste turno">📸</button>
           <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="delRec('${r.id}')">🗑️</button></td>
     </tr>`;
   }).join('');
@@ -1018,6 +1049,25 @@ function chartOpts(grid,y){ return {responsive:true,maintainAspectRatio:false,
 }
 
 /* ===================== EXECUTIVE CARD 1920x1080 ===================== */
+function laborStrip(d){
+  if(!d) return '';
+  const has=[d.laborPlan,d.laborStart,d.laborOfficial,d.laborReal].some(v=>v!=null);
+  if(!has) return '';
+  const L=laborMetrics(d);
+  const cell=(lab,v)=>`<span style="color:#9a9a9a">${lab} <b style="color:#fff">${v==null?'—':fmt(v,v%1?1:0)}</b></span>`;
+  return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">
+    <div style="font-family:Rajdhani;color:#a78bfa;font-size:18px;letter-spacing:.5px;margin-bottom:7px">👥 LABOR</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px 18px;font-family:Rajdhani;font-size:16px">
+      ${cell('Plan',d.laborPlan)} ${cell('Start',d.laborStart)} ${cell('Oficial',d.laborOfficial)} ${cell('Real',d.laborReal)}
+      <span style="color:#9a9a9a">Utilização <b style="color:#EE4D2D">${L.lu!=null?L.lu.toFixed(0)+'%':'—'}</b></span>
+      <span style="color:#9a9a9a">Eficiência <b style="color:#EE4D2D">${L.le!=null?L.le.toFixed(0)+'%':'—'}</b></span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px 18px;font-family:Rajdhani;font-size:16px;margin-top:6px">
+      <span style="color:#9a9a9a">Gap Plan→Start <b style="color:${L.g1!=null&&L.g1<0?'#FF4D4D':'#00D26A'}">${gapText(L.g1,L.g1p)}</b></span>
+      <span style="color:#9a9a9a">Gap Oficial→Real <b style="color:${L.g2!=null&&L.g2<0?'#FF4D4D':'#00D26A'}">${gapText(L.g2,L.g2p)}</b></span>
+    </div>
+  </div>`;
+}
 function cardHTML(r){
   const inb=r.in||{}, out=r.out||{}; const score=scoreOf(r); const t=tier(score);
   const kpiRow=(lab,re,me,type)=>{
@@ -1060,12 +1110,14 @@ function cardHTML(r){
         <table style="width:100%;border-collapse:collapse;font-size:17px">
           <thead><tr><th ${th}>KPI</th><th ${th} style="text-align:right;color:#EE4D2D">Meta</th><th ${th} style="text-align:right;color:#EE4D2D">Real</th><th ${th} style="text-align:right;color:#EE4D2D">Var.</th><th ${th} style="text-align:center;color:#EE4D2D">St.</th></tr></thead>
           <tbody>${inRows}</tbody></table>
+        ${laborStrip(inb)}
       </div>
       <div style="background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:20px 22px">
         <div style="font-family:Rajdhani;font-size:24px;letter-spacing:1px;margin-bottom:10px">🚚 OUTBOUND</div>
         <table style="width:100%;border-collapse:collapse;font-size:17px">
           <thead><tr><th ${th}>KPI</th><th ${th} style="text-align:right;color:#EE4D2D">Meta</th><th ${th} style="text-align:right;color:#EE4D2D">Real</th><th ${th} style="text-align:right;color:#EE4D2D">Var.</th><th ${th} style="text-align:center;color:#EE4D2D">St.</th></tr></thead>
           <tbody>${outRows}</tbody></table>
+        ${laborStrip(out)}
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:24px;margin-top:26px">
@@ -1099,7 +1151,7 @@ function cardHTML(r){
   </div>`;
 }
 function openCard(){
-  const r=currentRecord();
+  const r=exportRecord();
   if(!r){ toast('⚠️ Sem dados para o card'); return; }
   const html=cardHTML(r);
   $('#cardCapture').innerHTML=html;
@@ -1117,20 +1169,20 @@ async function downloadCard(){
   const node=$('#cardCapture').firstElementChild;
   const h=Math.max(1080,Math.ceil(node.scrollHeight));
   const canvas=await html2canvas(node,{backgroundColor:'#0B0B0B',scale:1,width:1920,height:h,windowWidth:1920,windowHeight:h});
-  const a=document.createElement('a'); a.download=`ARES_Card_${(currentRecord()?.data||'')}_${(currentRecord()?.turno||'')}.png`; a.href=canvas.toDataURL('image/png'); a.click();
+  const a=document.createElement('a'); a.download=`ARES_Card_${(exportRecord()?.data||'')}_${(exportRecord()?.turno||'')}.png`; a.href=canvas.toDataURL('image/png'); a.click();
   toast('✅ Card baixado');
 }
 
 /* ===================== EXPORTS ===================== */
 async function exportPNG(){
-  const r=currentRecord(); if(!r){ toast('⚠️ Sem dados'); return; }
+  const r=exportRecord(); if(!r){ toast('⚠️ Sem dados'); return; }
   $('#cardCapture').innerHTML=cardHTML(r); toast('Gerando PNG...');
   const node=$('#cardCapture').firstElementChild; const h=Math.max(1080,Math.ceil(node.scrollHeight));
   const canvas=await html2canvas(node,{backgroundColor:'#0B0B0B',scale:1,width:1920,height:h,windowWidth:1920,windowHeight:h});
   const a=document.createElement('a'); a.download=`ARES_${r.data||''}_${r.turno||''}.png`; a.href=canvas.toDataURL('image/png'); a.click(); toast('✅ PNG exportado');
 }
 async function exportPDF(){
-  const r=currentRecord(); if(!r){ toast('⚠️ Sem dados'); return; }
+  const r=exportRecord(); if(!r){ toast('⚠️ Sem dados'); return; }
   $('#cardCapture').innerHTML=cardHTML(r); toast('Gerando PDF...');
   const node=$('#cardCapture').firstElementChild; const h=Math.max(1080,Math.ceil(node.scrollHeight));
   const canvas=await html2canvas(node,{backgroundColor:'#0B0B0B',scale:1,width:1920,height:h,windowWidth:1920,windowHeight:h});
@@ -1157,7 +1209,7 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb,ws,'ARES'); XLSX.writeFile(wb,'ARES_Base_Operacional.xlsx'); toast('✅ Excel exportado');
 }
 function copyResumo(){
-  const r=currentRecord(); if(!r){ toast('⚠️ Sem dados'); return; }
+  const r=exportRecord(); if(!r){ toast('⚠️ Sem dados'); return; }
   const score=scoreOf(r); const t=tier(score);
   const txt=`⚔️ ARES — RESULTADO OPERACIONAL\n📅 ${r.data||'—'} | 🕐 ${r.turno||'—'} | 👤 ${r.coord||'—'} | 🏭 ${r.site||'—'}\n\n`+buildAnalysis(r)+`\n\n⚔️ SCORE ARES: ${score??'—'} ${t.e} ${t.n}\n— Na guerra da operação, execução vence estratégia.`;
   navigator.clipboard?.writeText(txt).then(()=>toast('✅ Resumo copiado'),()=>fallbackCopy(txt));
@@ -1198,9 +1250,10 @@ function switchView(name){
   if(name==='ranking') renderRanking();
   if(name==='warroom') renderWar();
   if(name==='tendencias') renderTrends();
+  if(name==='exportacoes') rebuildExportPicker();
   toggleNav(false); window.scrollTo({top:0,behavior:'smooth'});
 }
-function renderAll(){ renderDashboard(); renderHistory(); renderRanking(); renderWar(); if(getCurrentView()==='tendencias') renderTrends(); }
+function renderAll(){ renderDashboard(); renderHistory(); renderRanking(); renderWar(); rebuildExportPicker(); if(getCurrentView()==='tendencias') renderTrends(); }
 function toggleNav(open){ $('#sidebar').classList.toggle('open',open); $('#backdrop').classList.toggle('show',open); }
 function closeModal(id){ $('#'+id).classList.remove('show'); }
 
@@ -1225,7 +1278,7 @@ function init(){
   $$('.kp,#f-volplan,#f-volreal').forEach(el=>el.addEventListener('input',liveCalc));
   liveCalc();
   renderDashboard();
-  // backend
+  rebuildExportPicker();
   const bi=document.getElementById('backendUrl'); if(bi) bi.value=BACKEND_URL;
   if(BACKEND_URL){ setBackendStatus('Reconectando ao backend salvo…'); pullRecords(true); }
   else setSync('local');
