@@ -520,6 +520,14 @@ input,select,textarea{font-family:inherit}
 <div id="toast"></div>
 
 <script>
+/* ============================================================
+   >>> CONFIGURE AQUI PARA SINCRONIZAR EM TODOS OS DISPOSITIVOS <<<
+   Cole a URL do Web App do Apps Script (termina em /exec) entre as aspas.
+   Assim, qualquer celular/tablet/PC que abrir o ARES já conecta sozinho.
+   Ex.: const DEFAULT_BACKEND_URL = 'https://script.google.com/macros/s/AKxxxx/exec';
+   ============================================================ */
+const DEFAULT_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbx-oGsw0LnklNqfpo6dgxBX87XRaDGDCB-L99GRdGqPWR-v930Ud3g2vSM_sK7cxTwjkw/exec';
+
 /* ===================== STORAGE (safe shim) ===================== */
 const Store = (()=>{
   let mem = {};
@@ -538,7 +546,7 @@ function saveDB(){ Store.set(DB_KEY, JSON.stringify(records)); }
 
 /* ===================== BACKEND SYNC (Google Apps Script) ===================== */
 const BURL_KEY='ares_backend_url';
-let BACKEND_URL = Store.get(BURL_KEY) || '';
+let BACKEND_URL = Store.get(BURL_KEY) || DEFAULT_BACKEND_URL;
 let syncState = 'local';
 function setSync(state){
   syncState=state;
@@ -563,10 +571,18 @@ async function pullRecords(silent){
   setSync('syncing');
   try{
     const data=await backendGet();
-    if(data&&data.ok){ records=(data.records||[]).map(normalize); saveDB(); rebuildContextSelectors(); renderAll(); setSync('ok'); if(!silent) toast('☁️ Sincronizado — '+records.length+' registros'); }
+    if(data&&data.ok){
+      const incoming=(data.records||[]).map(normalize);
+      const changed = JSON.stringify(incoming)!==JSON.stringify(records);
+      records=incoming; saveDB();
+      if(changed){ rebuildContextSelectors(); renderAll(); }
+      setSync('ok'); if(!silent) toast('☁️ Sincronizado — '+records.length+' registros');
+    }
     else throw new Error((data&&data.error)||'resposta inválida');
   }catch(e){ setSync('error'); if(!silent) toast('⚠️ Falha ao sincronizar — usando dados locais'); console.warn('pull',e); }
 }
+let _lastPull=0;
+function autoPull(){ const now=Date.now(); if(BACKEND_URL && !document.hidden && now-_lastPull>4000){ _lastPull=now; pullRecords(true); } }
 async function pushSync(payload, okMsg){
   if(!BACKEND_URL){ return; }
   setSync('syncing');
@@ -1213,6 +1229,10 @@ function init(){
   const bi=document.getElementById('backendUrl'); if(bi) bi.value=BACKEND_URL;
   if(BACKEND_URL){ setBackendStatus('Reconectando ao backend salvo…'); pullRecords(true); }
   else setSync('local');
+  // auto-sync multi-dispositivo: ao voltar pra aba, ao focar e a cada 60s
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) autoPull(); });
+  window.addEventListener('focus',autoPull);
+  setInterval(autoPull,60000);
   // splash
   setTimeout(()=>{ $('#splash').classList.add('hide'); $('#app').classList.add('show'); setTimeout(()=>$('#splash').remove(),900); },3200);
 }
