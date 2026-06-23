@@ -935,8 +935,8 @@ function renderRanking(){
 /* ===================== WAR ROOM ===================== */
 function allKpisOf(r){
   const out=[]; const push=(name,real,meta,type)=>{ if(real==null||meta==null) return;
-    if(type==='pos'){ out.push({name,v:achievement(real,meta),good:achievement(real,meta)>=100}); }
-    else if(type==='neg'){ const va=variation(real,meta); out.push({name,v:100-va,good:va<=0,raw:va,neg:true}); }
+    if(type==='pos'){ const v=achievement(real,meta); if(v==null) return; out.push({name,v,good:v>=100}); }
+    else if(type==='neg'){ const va=variation(real,meta); if(va==null) return; out.push({name,v:100-va,good:va<=0,raw:va,neg:true}); }
   };
   ['in','out'].forEach(f=>{ const d=r[f]||{}; const pre=f==='in'?'IN ':'OUT ';
     push(pre+'Net',d.netReal,d.netMeta,'pos'); push(pre+(f==='in'?'OLA':'COT'),f==='in'?d.olaReal:d.cotReal,f==='in'?d.olaMeta:d.cotMeta,'pos');
@@ -1085,8 +1085,8 @@ function cardHTML(r){
   const outRows=[['Net',out.netReal,out.netMeta,'pos'],['COT',out.cotReal,out.cotMeta,'pos'],['Picking',out.pickingReal,out.pickingMeta,'pos'],['ABS',out.absReal,out.absMeta,'neg'],['Fast',out.fastReal,out.fastMeta,'pos'],['Strong Finish',out.sfReal,out.sfMeta,'pos']].map(a=>kpiRow(...a)).join('');
   // highlights
   const k=allKpisOf(r).filter(x=>!x.neg);
-  const highs=[...k].sort((a,b)=>b.v-a.v).filter(x=>x.v>=100).slice(0,3).map(x=>`${x.name} ${x.v.toFixed(0)}%`);
-  const lows=[...k].sort((a,b)=>a.v-b.v).filter(x=>x.v<95).slice(0,3).map(x=>`${x.name} ${x.v.toFixed(0)}%`);
+  const highs=[...k].filter(x=>x.v!=null).sort((a,b)=>b.v-a.v).filter(x=>x.v>=100).slice(0,3).map(x=>`${x.name} ${x.v.toFixed(0)}%`);
+  const lows=[...k].filter(x=>x.v!=null).sort((a,b)=>a.v-b.v).filter(x=>x.v<95).slice(0,3).map(x=>`${x.name} ${x.v.toFixed(0)}%`);
   const justifs=[inb.justificativa,out.justificativa].filter(Boolean).join(' · ')||'Sem justificativas registradas.';
   const th='style="padding:8px 10px;text-align:left;color:#EE4D2D;font-family:Rajdhani;font-size:18px;letter-spacing:1px"';
   return `<div style="width:1920px;min-height:1080px;display:flex;flex-direction:column;background:
